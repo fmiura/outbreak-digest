@@ -166,15 +166,15 @@ email <- blastula::compose_email(body = md(email_md),
 
 blastula::smtp_send(
   email,
-  from = FROM_EMAIL,   # usually same as SMTP_USER
+  from = FROM_EMAIL,   # same as SMTP_USER
   to   = TO_EMAIL,
   subject = sprintf("[Outbreak Summary] %s", format(now_ams, "%Y-%m-%d")),
   credentials = blastula::creds_envvar(
     user = SMTP_USER,
-    pass_envvar = "SMTP_PASS",      # GitHub Actions secret
-    host = SMTP_HOST,               # smtp.office365.com
-    port = as.integer(SMTP_PORT),   # 587
-    use_ssl = FALSE                 # STARTTLS
+    pass_envvar = "SMTP_PASS",     # From GitHub Secrets
+    host = SMTP_HOST,              # smtp.gmail.com
+    port = as.integer(SMTP_PORT),  # 465
+    use_ssl = TRUE                 # SSL (gmail needs 465)
   )
 )
 
