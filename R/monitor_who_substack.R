@@ -2,43 +2,36 @@
 
 # -------------------------------------------------------------------
 # R script: monitor_who_substack.R
-# Purpose: 
+# Purpose:
 #   - Fetch WHO DON and Outbreak News Today RSS feeds
 #   - Compare with previously seen items (stored in data/last_seen.json)
 #   - Summarize new items via ChatGPT API
-#   - Send a daily email summary using blastula
+#   - Save a daily markdown report in /reports/ instead of sending email
 # -------------------------------------------------------------------
 
 # Required packages --------------------------------------------------
-required <- c("tidyRSS", "jsonlite", "httr2", "blastula", 
-              "glue", "dplyr", "stringr", "lubridate")
+required <- c("tidyRSS", "jsonlite", "httr2", "glue", 
+              "dplyr", "stringr", "lubridate")
 to_install <- setdiff(required, rownames(installed.packages()))
 if (length(to_install)) install.packages(to_install, repos = "https://cloud.r-project.org")
 
 library(tidyRSS)
 library(jsonlite)
 library(httr2)
-library(blastula)
 library(glue)
 library(dplyr)
 library(stringr)
 library(lubridate)
 
-# Environment variables (injected from GitHub Secrets) ---------------
+# Environment variables (Secrets) -----------------------------------
 OPENAI_API_KEY <- Sys.getenv("OPENAI_API_KEY")
-SMTP_HOST      <- Sys.getenv("SMTP_HOST")
-SMTP_PORT      <- as.integer(Sys.getenv("SMTP_PORT", "587"))
-SMTP_USER      <- Sys.getenv("SMTP_USER")
-SMTP_PASS      <- Sys.getenv("SMTP_PASS")
-TO_EMAIL       <- Sys.getenv("TO_EMAIL")
-FROM_EMAIL     <- Sys.getenv("FROM_EMAIL", SMTP_USER)
 OPENAI_MODEL   <- Sys.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-if (any(c(OPENAI_API_KEY, SMTP_HOST, SMTP_USER, SMTP_PASS, TO_EMAIL) == "")) {
-  stop("Missing required environment variables: OPENAI_API_KEY, SMTP_HOST, SMTP_USER, SMTP_PASS, TO_EMAIL")
+if (OPENAI_API_KEY == "") {
+  stop("Missing OPENAI_API_KEY environment variable")
 }
 
-# Feeds to monitor (official RSS feeds only for now) -----------------
+# Feeds to monitor --------------------------------------------------
 feeds <- tibble::tibble(
   source = c("WHO DON", "Outbreak News Today"),
   url    = c(
@@ -76,7 +69,7 @@ summarize_with_chatgpt <- function(title, link, description, source) {
         list(role = "system",
              content = paste(
                "Summarize concisely (<=120 words).",
-               "Include: what/where/when, any key numbers, short risk/implications.",
+               "Include: what/where/when, key numbers, short risk/implications.",
                "End with: 'Note for NL/JP:' and one line."
              )),
         list(role = "user", content = body)
@@ -124,7 +117,7 @@ for (i in seq_len(nrow(feeds))) {
   }
 }
 
-# Build email body ---------------------------------------------------
+# Build report body --------------------------------------------------
 has_new <- any(vapply(new_items, function(x) isTRUE(x$is_new), logical(1)))
 header_line <- if (has_new) "Some sources updated." else "No new items."
 
@@ -132,7 +125,6 @@ sections <- c()
 for (src in feeds$source) {
   src_items <- Filter(function(x) !is.null(x$source) && x$source == src, new_items)
   if (length(src_items) == 0) {
-    # Feed unreachable recorded?
     err <- Filter(function(x) isTRUE(x$error) && x$source == src, new_items)
     if (length(err)) sections <- c(sections, glue("### {src}\n- Feed unreachable (no change check)."))
     else             sections <- c(sections, glue("### {src}\n- No change."))
@@ -152,7 +144,7 @@ for (src in feeds$source) {
   sections <- c(sections, paste(lines, collapse = "\n"))
 }
 
-email_md <- glue("
+report_md <- glue("
 # WHO & Outbreak News — Summary — {format(now_ams, '%Y-%m-%d %H:%M %Z')}
 
 **Overall status:** {header_line}
@@ -160,24 +152,11 @@ email_md <- glue("
 {paste(sections, collapse = '\n\n')}
 ")
 
-# Compose and send email ----------------------------------------------
-email <- blastula::compose_email(body = md(email_md),
-                                 footer = md("\n\n— Automated by R (GitHub Actions)"))
+# Save to file -------------------------------------------------------
+if (!dir.exists("reports")) dir.create("reports", recursive = TRUE)
+report_path <- file.path("reports", paste0("daily_report_", format(now_ams, "%Y%m%d"), ".md"))
+writeLines(report_md, con = report_path)
+cat("Report saved to", report_path, "\n")
 
-blastula::smtp_send(
-  email,
-  from = FROM_EMAIL,   # same as SMTP_USER
-  to   = TO_EMAIL,
-  subject = sprintf("[Outbreak Summary] %s", format(now_ams, "%Y-%m-%d")),
-  credentials = blastula::creds_envvar(
-    user = SMTP_USER,
-    pass_envvar = "SMTP_PASS",     # From GitHub Secrets
-    host = SMTP_HOST,              # smtp.gmail.com
-    port = as.integer(SMTP_PORT),  # 465
-    use_ssl = FALSE                 # SSL (gmail needs 465)
-  )
-)
-
-# Save updated state file ---------------------------------------------
+# Save state for next run --------------------------------------------
 write_json(state, state_path, pretty = TRUE, auto_unbox = TRUE)
-cat("Done.\n")

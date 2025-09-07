@@ -48,12 +48,13 @@ jobs:
 
       # Persist the state file (data/last_seen.json) so future runs can de-duplicate items.
       # Only commits if the file actually changed.
-      - name: Commit state if changed
+      - name: Commit reports if changed
         run: |
-          if [[ -n "$(git status --porcelain data/last_seen.json)" ]]; then
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git add data/last_seen.json
-            git commit -m "Update last_seen.json [skip ci]"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add reports/ data/last_seen.json
+          if [[ -n "$(git status --porcelain reports/ data/last_seen.json)" ]]; then
+            git commit -m "Update daily outbreak report [skip ci]"
             git push
           fi
+
