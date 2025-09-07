@@ -174,7 +174,7 @@ blastula::smtp_send(
     pass_envvar = "SMTP_PASS",     # From GitHub Secrets
     host = SMTP_HOST,              # smtp.gmail.com
     port = as.integer(SMTP_PORT),  # 465
-    use_ssl = TRUE                 # SSL (gmail needs 465)
+    use_ssl = FALSE                 # SSL (gmail needs 465)
   )
 )
 
