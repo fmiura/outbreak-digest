@@ -164,19 +164,19 @@ email_md <- glue("
 email <- blastula::compose_email(body = md(email_md),
                                  footer = md("\n\n— Automated by R (GitHub Actions)"))
 
-smtp <- smtp_server(
-  host = SMTP_HOST, port = SMTP_PORT,
-  username = SMTP_USER, password = SMTP_PASS,
-  use_ssl = FALSE, use_tls = TRUE
-)
-
-email |>
-  smtp_send(
-    from = FROM_EMAIL,
-    to   = TO_EMAIL,
-    subject = sprintf("[Outbreak Summary] %s", format(now_ams, "%Y-%m-%d")),
-    credentials = smtp
+blastula::smtp_send(
+  email,
+  from = FROM_EMAIL,   # usually same as SMTP_USER
+  to   = TO_EMAIL,
+  subject = sprintf("[Outbreak Summary] %s", format(now_ams, "%Y-%m-%d")),
+  credentials = blastula::creds_envvar(
+    user = SMTP_USER,
+    pass_envvar = "SMTP_PASS",      # GitHub Actions secret
+    host = SMTP_HOST,               # smtp.office365.com
+    port = as.integer(SMTP_PORT),   # 587
+    use_ssl = FALSE                 # STARTTLS
   )
+)
 
 # Save updated state file ---------------------------------------------
 write_json(state, state_path, pretty = TRUE, auto_unbox = TRUE)
