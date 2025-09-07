@@ -1,0 +1,59 @@
+name: WHO & Substack daily (R)
+
+on:
+  # Schedule: runs at 06:00 UTC every day.
+  # During EU summer time, this corresponds to 08:00 in Europe/Amsterdam.
+  # If you want a different time, adjust the cron below.
+  schedule:
+    - cron: "0 6 * * *"
+  # Allows you to trigger the workflow manually from the GitHub UI.
+  workflow_dispatch:
+
+# Needed so the workflow can commit the state file back to the repository.
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the repository so we can access scripts and commit changes.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Set up an R environment on the runner.
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true  # faster, reliable CRAN binaries
+
+      # Install system libraries required by some R packages (e.g., curl/ssl).
+      - name: Install system libs
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libcurl4-openssl-dev
+
+      # Run the monitoring script.
+      # Secrets are injected as environment variables and read inside the R script.
+      - name: Run script
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}
+          SMTP_USER:      ${{ secrets.SMTP_USER }}
+          SMTP_PASS:      ${{ secrets.SMTP_PASS }}
+          TO_EMAIL:       ${{ secrets.TO_EMAIL }}
+          FROM_EMAIL:     ${{ secrets.FROM_EMAIL }}
+          OPENAI_MODEL:   ${{ secrets.OPENAI_MODEL }}  # optional; defaults to gpt-4o-mini in the script
+        run: Rscript R/monitor_who_substack.R
+
+      # Persist the state file (data/last_seen.json) so future runs can de-duplicate items.
+      # Only commits if the file actually changed.
+      - name: Commit state if changed
+        run: |
+          if [[ -n "$(git status --porcelain data/last_seen.json)" ]]; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add data/last_seen.json
+            git commit -m "Update last_seen.json [skip ci]"
+            git push
+          fi
